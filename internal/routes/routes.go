@@ -16,12 +16,21 @@ func SetupRouter(client *mongo.Client, dbName string) *mux.Router {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("Server is healthy"))
 	}).Methods("GET")
+
+	// Initialize handlers
 	userHandler := handlers.NewUserHandler(client, dbName)
-	
+	courseHandler := handlers.NewCourseHandler(client, dbName)
+
+	// User routes
+	router.HandleFunc("/api/users/signup", userHandler.Signup).Methods("POST")
 	router.HandleFunc("/api/users", userHandler.GetUsers).Methods("GET")
-	router.HandleFunc("/api/users", userHandler.CreateUser).Methods("POST")
-	router.HandleFunc("/api/users", userHandler.GetUsers).Methods("GET")
-	router.HandleFunc("/api/users", userHandler.CreateUser).Methods("POST")
+
+	// Course routes
+	router.HandleFunc("/api/courses", courseHandler.GetCourses).Methods("GET")
+	router.HandleFunc("/api/courses", courseHandler.CreateCourse).Methods("POST")
+	router.HandleFunc("/api/courses", courseHandler.UpdateCourse).Methods("PUT")
+	router.HandleFunc("/api/courses", courseHandler.DeleteCourse).Methods("DELETE")
+	router.HandleFunc("/api/courses/archive", courseHandler.ArchiveCourse).Methods("PUT")
 
 	return router
 }
