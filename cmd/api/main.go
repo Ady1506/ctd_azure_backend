@@ -13,7 +13,6 @@ import (
 func main() {
 	// Load configuration
 	cfg := config.LoadConfig()
-
 	// Connect to MongoDB
 	client, err := database.ConnectMongoDB(cfg.MongoURI)
 	if err != nil {

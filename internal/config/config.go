@@ -15,11 +15,13 @@ type Config struct {
 }
 
 func LoadConfig() Config {
-	_ = godotenv.Load()
+	err := godotenv.Load()
+	if err != nil {
 
+	}
 	return Config{
 		Port:         getEnv("PORT", "8000"),
-		MongoURI:     getEnv("MONGODB_URI", "mongodb://localhost:27017"),
+		MongoURI:     getEnv("MONGODB_URI", "mongodb+srv://jas:jas@abc.xqqgc.mongodb.net/?retryWrites=true&w=majority&appName=ABC"),
 		DatabaseName: getEnv("DATABASE_NAME", "go_backend"),
 		Timeout:      10 * time.Second,
 	}

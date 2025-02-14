@@ -4,8 +4,8 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
-	"go.mongodb.org/mongo-driver/mongo"
 	"github.com/jas-4484/ctd-backend/internal/handlers"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func SetupRouter(client *mongo.Client, dbName string) *mux.Router {
@@ -20,6 +20,12 @@ func SetupRouter(client *mongo.Client, dbName string) *mux.Router {
 	// Initialize handlers
 	userHandler := handlers.NewUserHandler(client, dbName)
 	courseHandler := handlers.NewCourseHandler(client, dbName)
+
+	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte("<h1>how you doing</h1>"))
+	}).Methods("GET")
 
 	// User routes
 	router.HandleFunc("/api/users/signup", userHandler.Signup).Methods("POST")
