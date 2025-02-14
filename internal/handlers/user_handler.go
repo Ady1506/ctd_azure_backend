@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jas-4484/ctd-backend/internal/auth"
 	"github.com/jas-4484/ctd-backend/internal/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -67,7 +68,9 @@ func (h *UserHandler) Signup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return the created user
-	w.Header().Set("Content-Type", "application/json")
+	// Generate JWT on user signup or login
+	token, _ := auth.GenerateJWT(newUser.ID.Hex(), string(newUser.Role))
+	w.Header().Set("Authorization", "Bearer "+token)
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(newUser)
 }

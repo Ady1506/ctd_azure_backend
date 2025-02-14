@@ -5,6 +5,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/jas-4484/ctd-backend/internal/handlers"
+	"github.com/jas-4484/ctd-backend/internal/middleware"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -33,8 +34,7 @@ func SetupRouter(client *mongo.Client, dbName string) *mux.Router {
 
 	// Course routes
 	router.HandleFunc("/api/courses", courseHandler.GetCourses).Methods("GET")
-	router.HandleFunc("/api/courses", courseHandler.CreateCourse).Methods("POST")
-	router.HandleFunc("/api/courses", courseHandler.UpdateCourse).Methods("PUT")
+	router.Handle("/api/courses", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.CreateCourse))).Methods("POST") // Protected	router.HandleFunc("/api/courses", courseHandler.UpdateCourse).Methods("PUT")
 	router.HandleFunc("/api/courses", courseHandler.DeleteCourse).Methods("DELETE")
 	router.HandleFunc("/api/courses/archive", courseHandler.ArchiveCourse).Methods("PUT")
 
