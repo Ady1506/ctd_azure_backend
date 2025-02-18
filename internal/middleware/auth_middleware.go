@@ -1,35 +1,28 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
-	"strings"
 
 	"github.com/jas-4484/ctd-backend/internal/auth"
 )
 
 func AdminAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Extract token from Authorization header
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Missing token", http.StatusUnauthorized)
-			return
-		}
-
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		claims, err := auth.ValidateJWT(tokenString)
+		cookie, err := r.Cookie("token")
 		if err != nil {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 
-		// Check if the user is an admin
-		if claims.Role != "admin" {
-			http.Error(w, "Access denied: Admins only", http.StatusForbidden)
+		token := cookie.Value
+		claims, err := auth.ValidateJWT(token)
+		if err != nil || claims.Role != "admin" {
+			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
 
-		// Call next handler
-		next.ServeHTTP(w, r)
+		ctx := context.WithValue(r.Context(), "userID", claims.UserID)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

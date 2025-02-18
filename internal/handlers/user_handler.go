@@ -11,6 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type UserHandler struct {
@@ -32,8 +33,8 @@ func (h *UserHandler) Signup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate required fields
-	if newUser.Email == "" || newUser.DisplayName == "" {
-		http.Error(w, "Email and display name are required", http.StatusBadRequest)
+	if newUser.Email == "" || newUser.DisplayName == "" || newUser.Password == "" {
+		http.Error(w, "Email, display name, and password are required", http.StatusBadRequest)
 		return
 	}
 
@@ -51,6 +52,14 @@ func (h *UserHandler) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Hash the password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newUser.Password), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, "Failed to hash password", http.StatusInternalServerError)
+		return
+	}
+	newUser.Password = string(hashedPassword)
+
 	// Set default values
 	newUser.ID = primitive.NewObjectID()
 	newUser.CreatedAt = time.Now()
@@ -67,15 +76,61 @@ func (h *UserHandler) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return the created user
-	// Generate JWT on user signup or login
+	// Generate JWT on user signup
 	token, _ := auth.GenerateJWT(newUser.ID.Hex(), string(newUser.Role))
-	w.Header().Set("Authorization", "Bearer "+token)
+	http.SetCookie(w, &http.Cookie{
+		Name:     "token",
+		Value:    token,
+		Expires:  time.Now().Add(24 * time.Hour),
+		HttpOnly: true,
+	})
+
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(newUser)
 }
 
-// GetUsers retrieves all users from the database
+// Signin handles user login
+func (h *UserHandler) Signin(w http.ResponseWriter, r *http.Request) {
+	var credentials struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&credentials); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	// Find the user by email
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var user models.User
+	err := h.collection.FindOne(ctx, bson.M{"email": credentials.Email}).Decode(&user)
+	if err != nil {
+		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
+		return
+	}
+
+	// Compare the provided password with the stored hashed password
+	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(credentials.Password))
+	if err != nil {
+		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
+		return
+	}
+
+	// Generate JWT on user login
+	token, _ := auth.GenerateJWT(user.ID.Hex(), string(user.Role))
+	http.SetCookie(w, &http.Cookie{
+		Name:     "token",
+		Value:    token,
+		Expires:  time.Now().Add(24 * time.Hour),
+		HttpOnly: true,
+	})
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(user)
+}
+
 func (h *UserHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
