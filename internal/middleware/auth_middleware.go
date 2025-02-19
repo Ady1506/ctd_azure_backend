@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"log"
 	"net/http"
 
 	"github.com/jas-4484/ctd-backend/internal/auth"
@@ -16,6 +17,7 @@ func AdminAuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		token := cookie.Value
+		log.Printf("Token: %s", token) // Log the token
 		claims, err := auth.ValidateJWT(token)
 		if err != nil || claims.Role != "admin" {
 			http.Error(w, "Forbidden", http.StatusForbidden)

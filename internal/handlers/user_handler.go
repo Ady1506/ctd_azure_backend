@@ -83,6 +83,8 @@ func (h *UserHandler) Signup(w http.ResponseWriter, r *http.Request) {
 		Value:    token,
 		Expires:  time.Now().Add(24 * time.Hour),
 		HttpOnly: true,
+		Secure:   false,
+		Path:     "/api",
 	})
 
 	w.WriteHeader(http.StatusCreated)
@@ -125,6 +127,8 @@ func (h *UserHandler) Signin(w http.ResponseWriter, r *http.Request) {
 		Value:    token,
 		Expires:  time.Now().Add(24 * time.Hour),
 		HttpOnly: true,
+		Secure:   false,
+		Path:     "/api",
 	})
 
 	w.WriteHeader(http.StatusOK)

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -26,6 +27,7 @@ func NewCourseHandler(client *mongo.Client, dbName string) *CourseHandler {
 func (h *CourseHandler) CreateCourse(w http.ResponseWriter, r *http.Request) {
 	var newCourse models.Course
 	if err := json.NewDecoder(r.Body).Decode(&newCourse); err != nil {
+		log.Print(err)
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		return
 	}
@@ -101,12 +103,12 @@ func (h *CourseHandler) UpdateCourse(w http.ResponseWriter, r *http.Request) {
 	// Update fields
 	update := bson.M{
 		"$set": bson.M{
-			"name":         updatedCourse.Name,
-			"subject":      updatedCourse.Subject,
-			"schedule":     updatedCourse.Schedule,
+			"name":           updatedCourse.Name,
+			"subject":        updatedCourse.Subject,
+			"schedule":       updatedCourse.Schedule,
 			"duration_weeks": updatedCourse.DurationWeeks,
-			"meeting_link": updatedCourse.MeetingLink,
-			"updated_at":   time.Now(),
+			"meeting_link":   updatedCourse.MeetingLink,
+			"updated_at":     time.Now(),
 		},
 	}
 
