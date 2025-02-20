@@ -15,12 +15,14 @@ import (
 )
 
 type UserHandler struct {
-	collection *mongo.Collection
+	collection  *mongo.Collection
+	enrollments *mongo.Collection
 }
 
 func NewUserHandler(client *mongo.Client, dbName string) *UserHandler {
 	return &UserHandler{
-		collection: client.Database(dbName).Collection("users"),
+		collection:  client.Database(dbName).Collection("users"),
+		enrollments: client.Database(dbName).Collection("enrollments"),
 	}
 }
 
@@ -156,4 +158,160 @@ func (h *UserHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 	// Return users as JSON
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(users)
+}
+
+// EnrollCourse handles student enrollment in a course
+func (h *UserHandler) EnrollCourse(w http.ResponseWriter, r *http.Request) {
+	var enrollment struct {
+		CourseID string `json:"course_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&enrollment); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	// Get the student ID from the context
+	studentID, ok := r.Context().Value("userID").(string)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Convert studentID and courseID to ObjectID
+	studentObjID, err := primitive.ObjectIDFromHex(studentID)
+	if err != nil {
+		http.Error(w, "Invalid student ID", http.StatusBadRequest)
+		return
+	}
+	courseObjID, err := primitive.ObjectIDFromHex(enrollment.CourseID)
+	if err != nil {
+		http.Error(w, "Invalid course ID", http.StatusBadRequest)
+		return
+	}
+
+	// Check if the course exists
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var course models.Course
+	err = h.collection.Database().Collection("courses").FindOne(ctx, bson.M{"_id": courseObjID}).Decode(&course)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			http.Error(w, "Course not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Failed to check course existence", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Check if the student is already enrolled in the course
+	var existingEnrollment models.Enrollment
+	err = h.enrollments.FindOne(ctx, bson.M{"student_id": studentObjID, "course_id": courseObjID}).Decode(&existingEnrollment)
+	if err == nil {
+		http.Error(w, "Student is already enrolled in this course", http.StatusConflict)
+		return
+	} else if err != mongo.ErrNoDocuments {
+		http.Error(w, "Failed to check enrollment status", http.StatusInternalServerError)
+		return
+	}
+
+	// Create the enrollment
+	newEnrollment := models.Enrollment{
+		StudentID:  studentObjID,
+		CourseID:   courseObjID,
+		EnrolledAt: time.Now(),
+		Status:     models.StatusActive,
+	}
+
+	// Insert the enrollment into the database
+	_, err = h.enrollments.InsertOne(ctx, newEnrollment)
+	if err != nil {
+		http.Error(w, "Failed to enroll in course", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(newEnrollment)
+}
+
+// MarkAttendance handles marking attendance for a student in a session
+func (h *UserHandler) MarkAttendance(w http.ResponseWriter, r *http.Request) {
+	var attendanceRequest struct {
+		CourseID string `json:"course_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&attendanceRequest); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	// Get the student ID from the context
+	studentID, ok := r.Context().Value("userID").(string)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Convert studentID and courseID to ObjectID
+	studentObjID, err := primitive.ObjectIDFromHex(studentID)
+	if err != nil {
+		http.Error(w, "Invalid student ID", http.StatusBadRequest)
+		return
+	}
+	courseObjID, err := primitive.ObjectIDFromHex(attendanceRequest.CourseID)
+	if err != nil {
+		http.Error(w, "Invalid course ID", http.StatusBadRequest)
+		return
+	}
+
+	// Find the current session for the course
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var session models.Session
+	err = h.collection.Database().Collection("sessions").FindOne(ctx, bson.M{
+		"course_id":  courseObjID,
+		"start_time": bson.M{"$lte": time.Now()},
+		"end_time":   bson.M{"$gte": time.Now()},
+	}).Decode(&session)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			http.Error(w, "No current session found for the course", http.StatusNotFound)
+		} else {
+			http.Error(w, "Failed to find current session", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Check if attendance is already marked for the student in the session
+	var existingAttendance models.Attendance
+	err = h.collection.Database().Collection("attendances").FindOne(ctx, bson.M{
+		"session_id": session.ID,
+		"student_id": studentObjID,
+	}).Decode(&existingAttendance)
+	if err == nil {
+		http.Error(w, "Attendance already marked for this session", http.StatusConflict)
+		return
+	} else if err != mongo.ErrNoDocuments {
+		http.Error(w, "Failed to check attendance status", http.StatusInternalServerError)
+		return
+	}
+
+	// Mark attendance
+	newAttendance := models.Attendance{
+		SessionID: session.ID,
+		StudentID: studentObjID,
+		Status:    models.StatusPresent,
+		MarkedBy:  studentObjID, // Assuming self-marking for simplicity
+		MarkedAt:  time.Now(),
+	}
+
+	// Insert the attendance into the database
+	_, err = h.collection.Database().Collection("attendances").InsertOne(ctx, newAttendance)
+	if err != nil {
+		http.Error(w, "Failed to mark attendance", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(newAttendance)
 }

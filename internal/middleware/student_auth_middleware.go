@@ -7,7 +7,7 @@ import (
 	"github.com/jas-4484/ctd-backend/internal/auth"
 )
 
-func AdminAuthMiddleware(next http.Handler) http.Handler {
+func StudentAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("token")
 		if err != nil {
@@ -17,7 +17,7 @@ func AdminAuthMiddleware(next http.Handler) http.Handler {
 
 		token := cookie.Value
 		claims, err := auth.ValidateJWT(token)
-		if err != nil || claims.Role != "admin" {
+		if err != nil || claims.Role != "student" {
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}

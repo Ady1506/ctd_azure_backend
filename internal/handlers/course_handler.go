@@ -169,3 +169,33 @@ func (h *CourseHandler) ArchiveCourse(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Course archived successfully"))
 }
+
+// CreateSession handles creating a new session for a course
+func (h *CourseHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
+	var newSession models.Session
+	if err := json.NewDecoder(r.Body).Decode(&newSession); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	// Validate required fields
+	if newSession.CourseID == primitive.NilObjectID || newSession.StartTime.IsZero() || newSession.EndTime.IsZero() {
+		http.Error(w, "CourseID, StartTime, and EndTime are required", http.StatusBadRequest)
+		return
+	}
+
+	// Set default values
+	newSession.ID = primitive.NewObjectID()
+
+	// Insert into database
+	_, err := h.collection.Database().Collection("sessions").InsertOne(context.TODO(), newSession)
+	if err != nil {
+		http.Error(w, "Failed to create session", http.StatusInternalServerError)
+		return
+	}
+
+	// Return the created session
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(newSession)
+}
