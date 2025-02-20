@@ -199,3 +199,84 @@ func (h *CourseHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(newSession)
 }
+
+// AssignTutor handles assigning a tutor to a course
+func (h *CourseHandler) AssignTutor(w http.ResponseWriter, r *http.Request) {
+	var assignment struct {
+		TutorID  string `json:"tutor_id"`
+		CourseID string `json:"course_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&assignment); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	// Convert TutorID and CourseID to ObjectID
+	tutorObjID, err := primitive.ObjectIDFromHex(assignment.TutorID)
+	if err != nil {
+		http.Error(w, "Invalid tutor ID", http.StatusBadRequest)
+		return
+	}
+	courseObjID, err := primitive.ObjectIDFromHex(assignment.CourseID)
+	if err != nil {
+		http.Error(w, "Invalid course ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get the admin ID from the context
+	adminID, ok := r.Context().Value("userID").(string)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	adminObjID, err := primitive.ObjectIDFromHex(adminID)
+	if err != nil {
+		http.Error(w, "Invalid admin ID", http.StatusBadRequest)
+		return
+	}
+
+	// Check if the course exists
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var course models.Course
+	err = h.collection.FindOne(ctx, bson.M{"_id": courseObjID}).Decode(&course)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			http.Error(w, "Course not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Failed to check course existence", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Check if the tutor exists
+	var tutor models.User
+	err = h.collection.Database().Collection("users").FindOne(ctx, bson.M{"_id": tutorObjID, "role": models.RoleTutor}).Decode(&tutor)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			http.Error(w, "Tutor not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Failed to check tutor existence", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Create the tutor assignment
+	newAssignment := models.TutorAssignment{
+		TutorID:    tutorObjID,
+		CourseID:   courseObjID,
+		AssignedBy: adminObjID,
+		AssignedAt: time.Now(),
+	}
+
+	// Insert the assignment into the database
+	_, err = h.collection.Database().Collection("tutor_assignments").InsertOne(ctx, newAssignment)
+	if err != nil {
+		http.Error(w, "Failed to assign tutor", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(newAssignment)
+}
