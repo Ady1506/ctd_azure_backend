@@ -52,5 +52,9 @@ func SetupRouter(client *mongo.Client, dbName string) *mux.Router {
 	// Tutor assignment route
 	router.Handle("/api/tutor_assignments", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.AssignTutor))).Methods("POST") // Protected
 
+	// New routes for fetching tutors with assigned courses and courses with sessions
+	router.Handle("/api/tutors_with_courses", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.GetTutorsWithCourses))).Methods("GET") // Protected
+	router.Handle("/api/courses_with_sessions", http.HandlerFunc(courseHandler.GetCoursesWithSessions)).Methods("GET")
+
 	return router
 }

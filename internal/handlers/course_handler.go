@@ -280,3 +280,95 @@ func (h *CourseHandler) AssignTutor(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(newAssignment)
 }
+
+// GetTutorsWithCourses retrieves all tutors with their assigned courses
+func (h *CourseHandler) GetTutorsWithCourses(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Aggregate tutors with their assigned courses
+	pipeline := mongo.Pipeline{
+		{
+			{
+				Key: "$lookup",
+				Value: bson.D{
+					{Key: "from", Value: "tutor_assignments"},
+					{Key: "localField", Value: "_id"},
+					{Key: "foreignField", Value: "tutor_id"},
+					{Key: "as", Value: "assigned_courses"},
+				},
+			},
+		},
+		{
+			{
+				Key: "$match",
+				Value: bson.D{
+					{Key: "role", Value: models.RoleTutor},
+				},
+			},
+		},
+	}
+
+	cursor, err := h.collection.Database().Collection("users").Aggregate(ctx, pipeline)
+	if err != nil {
+		http.Error(w, "Failed to fetch tutors with courses", http.StatusInternalServerError)
+		return
+	}
+	defer cursor.Close(ctx)
+
+	var tutors []bson.M
+	if err = cursor.All(ctx, &tutors); err != nil {
+		http.Error(w, "Error decoding tutors with courses", http.StatusInternalServerError)
+		return
+	}
+
+	// Return tutors with their assigned courses as JSON
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tutors)
+}
+
+// GetCoursesWithSessions retrieves all courses with their sessions
+func (h *CourseHandler) GetCoursesWithSessions(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Aggregate courses with their sessions
+	pipeline := mongo.Pipeline{
+		{
+			{
+				Key: "$lookup",
+				Value: bson.D{
+					{Key: "from", Value: "sessions"},
+					{Key: "localField", Value: "_id"},
+					{Key: "foreignField", Value: "course_id"},
+					{Key: "as", Value: "sessions"},
+				},
+			},
+		},
+		{
+			{
+				Key: "$match",
+				Value: bson.D{
+					{Key: "archived", Value: false},
+				},
+			},
+		},
+	}
+
+	cursor, err := h.collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		http.Error(w, "Failed to fetch courses with sessions", http.StatusInternalServerError)
+		return
+	}
+	defer cursor.Close(ctx)
+
+	var courses []bson.M
+	if err = cursor.All(ctx, &courses); err != nil {
+		http.Error(w, "Error decoding courses with sessions", http.StatusInternalServerError)
+		return
+	}
+
+	// Return courses with their sessions as JSON
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(courses)
+}
