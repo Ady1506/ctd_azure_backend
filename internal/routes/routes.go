@@ -33,6 +33,9 @@ func SetupRouter(client *mongo.Client, dbName string) *mux.Router {
 	router.HandleFunc("/api/users/signin", userHandler.Signin).Methods("POST")
 	router.HandleFunc("/api/users", userHandler.GetUsers).Methods("GET")
 
+	// Email verification route
+	router.HandleFunc("/api/users/verify", userHandler.VerifyEmail).Methods("GET")
+
 	// Course routes
 	router.HandleFunc("/api/courses", courseHandler.GetCourses).Methods("GET")
 	router.Handle("/api/courses", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.CreateCourse))).Methods("POST") // Protected

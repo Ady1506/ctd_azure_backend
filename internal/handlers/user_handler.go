@@ -2,12 +2,16 @@ package handlers
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jas-4484/ctd-backend/internal/auth"
 	"github.com/jas-4484/ctd-backend/internal/models"
+	"github.com/jas-4484/ctd-backend/internal/utils"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -26,6 +30,14 @@ func NewUserHandler(client *mongo.Client, dbName string) *UserHandler {
 	}
 }
 
+func GenerateVerificationToken() (string, error) {
+	bytes := make([]byte, 16)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
 // Signup handles user registration
 func (h *UserHandler) Signup(w http.ResponseWriter, r *http.Request) {
 	var newUser models.User
@@ -40,6 +52,10 @@ func (h *UserHandler) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !strings.HasSuffix(newUser.Email, "@thapar.edu") {
+		http.Error(w, "Email must end with @thapar.edu", http.StatusBadRequest)
+		return
+	}
 	// Check if the email already exists
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -62,6 +78,15 @@ func (h *UserHandler) Signup(w http.ResponseWriter, r *http.Request) {
 	}
 	newUser.Password = string(hashedPassword)
 
+	// Generate a verification token
+	verificationToken, err := GenerateVerificationToken()
+	if err != nil {
+		http.Error(w, "Failed to generate verification token", http.StatusInternalServerError)
+		return
+	}
+	newUser.VerificationToken = verificationToken
+	newUser.IsVerified = false
+
 	// Set default values
 	newUser.ID = primitive.NewObjectID()
 	newUser.CreatedAt = time.Now()
@@ -78,19 +103,128 @@ func (h *UserHandler) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate JWT on user signup
-	token, _ := auth.GenerateJWT(newUser.ID.Hex(), string(newUser.Role))
-	http.SetCookie(w, &http.Cookie{
-		Name:     "token",
-		Value:    token,
-		Expires:  time.Now().Add(24 * time.Hour),
-		HttpOnly: true,
-		Secure:   false,
-		Path:     "/api",
-	})
+	// Send verification email
+	verificationURL := "http://localhost:8000/api/users/verify?token=" + verificationToken
+	emailBody := `
+	<!DOCTYPE html>
+	<html>
+	<head>
+		<style>
+			body {
+				font-family: Arial, sans-serif;
+				background-color: #f4f4f9;
+				color: #333;
+				line-height: 1.6;
+				margin: 0;
+				padding: 0;
+			}
+			.container {
+				max-width: 600px;
+				margin: 20px auto;
+				background: #ffffff;
+				border-radius: 8px;
+				box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+				overflow: hidden;
+			}
+			.header {
+				background-color: #003366; /* Primary dark blue */
+				color: #ffffff;
+				padding: 20px;
+				text-align: center;
+			}
+			.header h1 {
+				margin: 0;
+				font-size: 24px;
+			}
+			.content {
+				padding: 20px;
+			}
+			.content p {
+				margin: 10px 0;
+			}
+			.button {
+				display: inline-block;
+				background-color: #0073e6; /* Light blue accent */
+				color: #ffffff;
+				font-weight:bold;
+				padding: 10px 20px;
+				text-decoration: none;
+				border-radius: 5px;
+				font-size: 16px;
+				margin-top: 20px;
+			}
+			.footer {
+				background-color: #f4f4f9;
+				color: #666;
+				text-align: center;
+				padding: 10px;
+				font-size: 12px;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<div class="header">
+				<h1>Email Verification</h1>
+			</div>
+			<div class="content">
+				<p>Hi ` + newUser.DisplayName + `,</p>
+				<p>Thank you for signing up! Please verify your email by clicking the button below:</p>
+				<a href="` + verificationURL + `" class="button">Verify Email</a>
+				<p>If you did not sign up for this account, you can safely ignore this email.</p>
+			</div>
+			<div class="footer">
+				<p>&copy; Centre For Training & Development. All rights reserved.</p>
+			</div>
+		</div>
+	</body>
+	</html>`
+	go func() {
+		if err := utils.SendEmail(newUser.Email, "Email Verification", emailBody); err != nil {
+			http.Error(w, "Failed to send verification email", http.StatusInternalServerError)
+		}
+	}()
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(newUser)
+}
+
+func (h *UserHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		http.Error(w, "Verification token is required", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Find the user with the given token
+	var user models.User
+	err := h.collection.FindOne(ctx, bson.M{"verification_token": token}).Decode(&user)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			http.Error(w, "Invalid or expired verification token", http.StatusNotFound)
+		} else {
+			http.Error(w, "Failed to verify email", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Update the user's verification status
+	_, err = h.collection.UpdateOne(ctx, bson.M{"_id": user.ID}, bson.M{
+		"$set": bson.M{
+			"is_verified":        true,
+			"verification_token": "",
+		},
+	})
+	if err != nil {
+		http.Error(w, "Failed to update verification status", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Email verified successfully"))
 }
 
 // Signin handles user login
@@ -112,6 +246,12 @@ func (h *UserHandler) Signin(w http.ResponseWriter, r *http.Request) {
 	err := h.collection.FindOne(ctx, bson.M{"email": credentials.Email}).Decode(&user)
 	if err != nil {
 		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
+		return
+	}
+
+	// Check if the user is verified
+	if !user.IsVerified {
+		http.Error(w, "Email not verified", http.StatusForbidden)
 		return
 	}
 
