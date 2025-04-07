@@ -68,7 +68,7 @@ func main() {
 
 	// Setup CORS middleware
 	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5174"}, // React frontend origin
+		AllowedOrigins:   []string{"http://localhost:5175"}, // React frontend origin
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type"},
 		AllowCredentials: true,

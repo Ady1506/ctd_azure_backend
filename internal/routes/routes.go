@@ -32,6 +32,8 @@ func SetupRouter(client *mongo.Client, dbName string) *mux.Router {
 	router.HandleFunc("/api/users/signup", userHandler.Signup).Methods("POST")
 	router.HandleFunc("/api/users/signin", userHandler.Signin).Methods("POST")
 	router.HandleFunc("/api/users", userHandler.GetUsers).Methods("GET")
+	router.HandleFunc("/api/users/logout", userHandler.Logout).Methods("POST")
+	router.Handle("/api/users/current", middleware.StudentAuthMiddleware(http.HandlerFunc(userHandler.CurrentUser))).Methods("GET")
 
 	// Course routes
 	router.HandleFunc("/api/courses", courseHandler.GetCourses).Methods("GET")
