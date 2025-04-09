@@ -48,15 +48,12 @@ func SetupRouter(client *mongo.Client, dbName string) *mux.Router {
 	router.Handle("/api/courses", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.UpdateCourse))).Methods("PUT")
 	router.Handle("/api/courses", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.DeleteCourse))).Methods("DELETE")
 	router.Handle("/api/courses/archive", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.ArchiveCourse))).Methods("PUT")
-  
+
 	// Enrollment views routes
 	router.Handle("/api/enrollments/courses", middleware.StudentAuthMiddleware(http.HandlerFunc(userHandler.ViewEnrolledCourses))).Methods("GET") // Protected
-  
+
 	//get course by id
 	router.HandleFunc("/api/courses/{id}", courseHandler.GetCourseByID).Methods("GET")
-
-	// Session routes
-	router.Handle("/api/sessions", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.CreateSession))).Methods("POST") // Protected
 
 	// Enrollment routes
 	router.Handle("/api/enrollments", middleware.StudentAuthMiddleware(http.HandlerFunc(userHandler.EnrollCourse))).Methods("POST") // Protected
