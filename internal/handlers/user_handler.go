@@ -39,6 +39,7 @@ func GenerateVerificationToken() (string, error) {
 }
 
 // Signup handles user registration
+// Signup handles user registration
 func (h *UserHandler) Signup(w http.ResponseWriter, r *http.Request) {
 	var newUser models.User
 	if err := json.NewDecoder(r.Body).Decode(&newUser); err != nil {
@@ -47,8 +48,8 @@ func (h *UserHandler) Signup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate required fields
-	if newUser.Email == "" || newUser.DisplayName == "" || newUser.Password == "" {
-		http.Error(w, "Email, display name, and password are required", http.StatusBadRequest)
+	if newUser.Email == "" || newUser.DisplayName == "" || newUser.Password == "" || newUser.Roll == 0 || newUser.Branch == "" || newUser.Year == 0 || newUser.Mobile == 0 {
+		http.Error(w, "Email, display name, password, roll, branch, year, and mobile are required", http.StatusBadRequest)
 		return
 	}
 
@@ -56,6 +57,7 @@ func (h *UserHandler) Signup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Email must end with @thapar.edu", http.StatusBadRequest)
 		return
 	}
+
 	// Check if the email already exists
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -106,79 +108,79 @@ func (h *UserHandler) Signup(w http.ResponseWriter, r *http.Request) {
 	// Send verification email
 	verificationURL := "http://localhost:8000/api/users/verify?token=" + verificationToken
 	emailBody := `
-	<!DOCTYPE html>
-	<html>
-	<head>
-		<style>
-			body {
-				font-family: Arial, sans-serif;
-				background-color: #f4f4f9;
-				color: #333;
-				line-height: 1.6;
-				margin: 0;
-				padding: 0;
-			}
-			.container {
-				max-width: 600px;
-				margin: 20px auto;
-				background: #ffffff;
-				border-radius: 8px;
-				box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-				overflow: hidden;
-			}
-			.header {
-				background-color: #003366; /* Primary dark blue */
-				color: #ffffff;
-				padding: 20px;
-				text-align: center;
-			}
-			.header h1 {
-				margin: 0;
-				font-size: 24px;
-			}
-			.content {
-				padding: 20px;
-			}
-			.content p {
-				margin: 10px 0;
-			}
-			.button {
-				display: inline-block;
-				background-color: #0073e6; /* Light blue accent */
-				color: #ffffff;
-				font-weight:bold;
-				padding: 10px 20px;
-				text-decoration: none;
-				border-radius: 5px;
-				font-size: 16px;
-				margin-top: 20px;
-			}
-			.footer {
-				background-color: #f4f4f9;
-				color: #666;
-				text-align: center;
-				padding: 10px;
-				font-size: 12px;
-			}
-		</style>
-	</head>
-	<body>
-		<div class="container">
-			<div class="header">
-				<h1>Email Verification</h1>
-			</div>
-			<div class="content">
-				<p>Hi ` + newUser.DisplayName + `,</p>
-				<p>Thank you for signing up! Please verify your email by clicking the button below:</p>
-				<a href="` + verificationURL + `" class="button">Verify Email</a>
-				<p>If you did not sign up for this account, you can safely ignore this email.</p>
-			</div>
-			<div class="footer">
-				<p>&copy; Centre For Training & Development. All rights reserved.</p>
-			</div>
-		</div>
-	</body>
-	</html>`
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                background-color: #f4f4f9;
+                color: #333;
+                line-height: 1.6;
+                margin: 0;
+                padding: 0;
+            }
+            .container {
+                max-width: 600px;
+                margin: 20px auto;
+                background: #ffffff;
+                border-radius: 8px;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+                overflow: hidden;
+            }
+            .header {
+                background-color: #003366; /* Primary dark blue */
+                color: #ffffff;
+                padding: 20px;
+                text-align: center;
+            }
+            .header h1 {
+                margin: 0;
+                font-size: 24px;
+            }
+            .content {
+                padding: 20px;
+            }
+            .content p {
+                margin: 10px 0;
+            }
+            .button {
+                display: inline-block;
+                background-color: #0073e6; /* Light blue accent */
+                color: #ffffff;
+                font-weight:bold;
+                padding: 10px 20px;
+                text-decoration: none;
+                border-radius: 5px;
+                font-size: 16px;
+                margin-top: 20px;
+            }
+            .footer {
+                background-color: #f4f4f9;
+                color: #666;
+                text-align: center;
+                padding: 10px;
+                font-size: 12px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>Email Verification</h1>
+            </div>
+            <div class="content">
+                <p>Hi ` + newUser.DisplayName + `,</p>
+                <p>Thank you for signing up! Please verify your email by clicking the button below:</p>
+                <a href="` + verificationURL + `" class="button">Verify Email</a>
+                <p>If you did not sign up for this account, you can safely ignore this email.</p>
+            </div>
+            <div class="footer">
+                <p>&copy; Centre For Training & Development. All rights reserved.</p>
+            </div>
+        </div>
+    </body>
+    </html>`
 	go func() {
 		if err := utils.SendEmail(newUser.Email, "Email Verification", emailBody); err != nil {
 			http.Error(w, "Failed to send verification email", http.StatusInternalServerError)
@@ -275,6 +277,127 @@ func (h *UserHandler) Signin(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(user)
+}
+
+// ForgotPassword handles password reset requests
+func (h *UserHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	// Check if the user exists
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var user models.User
+	err := h.collection.FindOne(ctx, bson.M{"email": request.Email}).Decode(&user)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			http.Error(w, "Email not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Failed to process request", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Generate a new verification token
+	verificationToken, err := GenerateVerificationToken()
+	if err != nil {
+		http.Error(w, "Failed to generate reset token", http.StatusInternalServerError)
+		return
+	}
+
+	// Update the user's verification token
+	_, err = h.collection.UpdateOne(ctx, bson.M{"_id": user.ID}, bson.M{
+		"$set": bson.M{
+			"verification_token": verificationToken,
+		},
+	})
+	if err != nil {
+		http.Error(w, "Failed to update reset token", http.StatusInternalServerError)
+		return
+	}
+
+	// Send password reset email
+	resetURL := "http://localhost:8000/api/users/reset-password?token=" + verificationToken
+	emailBody := `
+    <h1>Password Reset</h1>
+    <p>Hi ` + user.DisplayName + `,</p>
+    <p>You requested to reset your password. Click the link below to reset it:</p>
+    <a href="` + resetURL + `">Reset Password</a>
+    <p>If you did not request this, you can safely ignore this email.</p>`
+	go func() {
+		if err := utils.SendEmail(user.Email, "Password Reset", emailBody); err != nil {
+			http.Error(w, "Failed to send reset email", http.StatusInternalServerError)
+		}
+	}()
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Password reset email sent"))
+}
+
+// ResetPassword handles resetting the user's password
+func (h *UserHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		http.Error(w, "Reset token is required", http.StatusBadRequest)
+		return
+	}
+
+	var request struct {
+		NewPassword string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	// Validate the new password
+	if len(request.NewPassword) < 6 {
+		http.Error(w, "Password must be at least 6 characters long", http.StatusBadRequest)
+		return
+	}
+
+	// Find the user with the given token
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var user models.User
+	err := h.collection.FindOne(ctx, bson.M{"verification_token": token}).Decode(&user)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			http.Error(w, "Invalid or expired reset token", http.StatusNotFound)
+		} else {
+			http.Error(w, "Failed to process request", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Hash the new password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(request.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, "Failed to hash password", http.StatusInternalServerError)
+		return
+	}
+
+	// Update the user's password and clear the verification token
+	_, err = h.collection.UpdateOne(ctx, bson.M{"_id": user.ID}, bson.M{
+		"$set": bson.M{
+			"password":           string(hashedPassword),
+			"verification_token": "",
+		},
+	})
+	if err != nil {
+		http.Error(w, "Failed to update password", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Password reset successfully"))
 }
 
 func (h *UserHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
@@ -374,7 +497,7 @@ func (h *UserHandler) EnrollCourse(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(newEnrollment)
 }
 
-// MarkAttendance handles marking attendance for a student in a session
+// MarkAttendance handles marking attendance for a student based on the course schedule
 func (h *UserHandler) MarkAttendance(w http.ResponseWriter, r *http.Request) {
 	var attendanceRequest struct {
 		CourseID string `json:"course_id"`
@@ -403,33 +526,69 @@ func (h *UserHandler) MarkAttendance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find the current session for the course
+	// Check if the student is enrolled in the course
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	var session models.Session
-	err = h.collection.Database().Collection("sessions").FindOne(ctx, bson.M{
-		"course_id":  courseObjID,
-		"start_time": bson.M{"$lte": time.Now()},
-		"end_time":   bson.M{"$gte": time.Now()},
-	}).Decode(&session)
+	var enrollment models.Enrollment
+	err = h.enrollments.FindOne(ctx, bson.M{"student_id": studentObjID, "course_id": courseObjID}).Decode(&enrollment)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			http.Error(w, "No current session found for the course", http.StatusNotFound)
+			http.Error(w, "Student is not enrolled in this course", http.StatusForbidden)
 		} else {
-			http.Error(w, "Failed to find current session", http.StatusInternalServerError)
+			http.Error(w, "Failed to check enrollment status", http.StatusInternalServerError)
 		}
 		return
 	}
 
-	// Check if attendance is already marked for the student in the session
+	// Fetch the course details
+	var course models.Course
+	err = h.collection.Database().Collection("courses").FindOne(ctx, bson.M{"_id": courseObjID}).Decode(&course)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			http.Error(w, "Course not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Failed to fetch course details", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Validate the current time against the course schedule
+	currentTime := time.Now()
+	currentDay := currentTime.Weekday().String()[:3] // Get the current day (e.g., "Mon", "Tue")
+	currentHour := currentTime.Format("3:04 PM")     // Get the current time in "HH:MM AM/PM" format
+
+	// Check if the current day is in the course schedule
+	isDayValid := false
+	for _, day := range course.Schedule.Days {
+		if strings.EqualFold(day, currentDay) {
+			isDayValid = true
+			break
+		}
+	}
+	if !isDayValid {
+		http.Error(w, "Attendance cannot be marked outside the scheduled days", http.StatusForbidden)
+		return
+	}
+
+	// Check if the current time falls within the scheduled time range
+	if currentHour < course.Schedule.StartTime || currentHour > course.Schedule.EndTime {
+		http.Error(w, "Attendance cannot be marked outside the scheduled time", http.StatusForbidden)
+		return
+	}
+
+	// Check if attendance is already marked for the student on the current day
 	var existingAttendance models.Attendance
 	err = h.collection.Database().Collection("attendances").FindOne(ctx, bson.M{
-		"session_id": session.ID,
+		"course_id":  courseObjID,
 		"student_id": studentObjID,
+		"marked_at": bson.M{
+			"$gte": time.Date(currentTime.Year(), currentTime.Month(), currentTime.Day(), 0, 0, 0, 0, currentTime.Location()),
+			"$lt":  time.Date(currentTime.Year(), currentTime.Month(), currentTime.Day()+1, 0, 0, 0, 0, currentTime.Location()),
+		},
 	}).Decode(&existingAttendance)
 	if err == nil {
-		http.Error(w, "Attendance already marked for this session", http.StatusConflict)
+		http.Error(w, "Attendance already marked for today", http.StatusConflict)
 		return
 	} else if err != mongo.ErrNoDocuments {
 		http.Error(w, "Failed to check attendance status", http.StatusInternalServerError)
@@ -438,11 +597,12 @@ func (h *UserHandler) MarkAttendance(w http.ResponseWriter, r *http.Request) {
 
 	// Mark attendance
 	newAttendance := models.Attendance{
-		SessionID: session.ID,
+		ID:        primitive.NewObjectID(),
+		SessionID: primitive.NilObjectID, // No session ID since it's based on schedule
 		StudentID: studentObjID,
 		Status:    models.StatusPresent,
 		MarkedBy:  studentObjID, // Assuming self-marking for simplicity
-		MarkedAt:  time.Now(),
+		MarkedAt:  currentTime,
 	}
 
 	// Insert the attendance into the database

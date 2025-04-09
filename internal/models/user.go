@@ -10,7 +10,6 @@ type UserRole string
 
 const (
 	RoleAdmin   UserRole = "admin"
-	RoleTutor   UserRole = "tutor"
 	RoleStudent UserRole = "student"
 )
 
@@ -21,6 +20,10 @@ type UserSettings struct {
 type User struct {
 	ID                primitive.ObjectID `json:"id" bson:"_id,omitempty"`
 	Email             string             `json:"email" bson:"email"`
+	Roll              int                `json:"roll" bson:"roll"`
+	Branch            string             `json:"branch" bson:"branch"`
+	Year              int                `json:"year" bson:"year"`
+	Mobile            int                `json:"mobile" bson:"mobile"`
 	DisplayName       string             `json:"display_name" bson:"display_name"`
 	Password          string             `json:"password" bson:"password"`
 	ProfileURL        string             `json:"profile_url" bson:"profile_url"`

@@ -17,7 +17,11 @@ type Config struct {
 func LoadConfig() Config {
 	err := godotenv.Load()
 	if err != nil {
-
+		if os.IsNotExist(err) {
+			// .env file not found, proceed with default values
+		} else {
+			panic("Error loading .env file")
+		}
 	}
 	return Config{
 		Port:         getEnv("PORT", "8000"),
