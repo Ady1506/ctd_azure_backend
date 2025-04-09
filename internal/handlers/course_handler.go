@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"time"
 
@@ -28,7 +27,6 @@ func NewCourseHandler(client *mongo.Client, dbName string) *CourseHandler {
 func (h *CourseHandler) CreateCourse(w http.ResponseWriter, r *http.Request) {
 	var newCourse models.Course
 	if err := json.NewDecoder(r.Body).Decode(&newCourse); err != nil {
-		log.Print(err)
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		return
 	}
@@ -36,6 +34,22 @@ func (h *CourseHandler) CreateCourse(w http.ResponseWriter, r *http.Request) {
 	// Validate required fields
 	if newCourse.Name == "" || newCourse.Subject == "" || newCourse.CreatedBy == primitive.NilObjectID {
 		http.Error(w, "Course name, subject, and created_by are required", http.StatusBadRequest)
+		return
+	}
+
+	// Validate StartDate and EndDate
+	if newCourse.StartDate.IsZero() || newCourse.EndDate.IsZero() {
+		http.Error(w, "StartDate and EndDate are required", http.StatusBadRequest)
+		return
+	}
+	if newCourse.StartDate.After(newCourse.EndDate) {
+		http.Error(w, "StartDate cannot be after EndDate", http.StatusBadRequest)
+		return
+	}
+
+	// Validate Schedule
+	if len(newCourse.Schedule.Days) == 0 || newCourse.Schedule.StartTime == "" || newCourse.Schedule.EndTime == "" {
+		http.Error(w, "Schedule must include days, start time, and end time", http.StatusBadRequest)
 		return
 	}
 
@@ -55,6 +69,64 @@ func (h *CourseHandler) CreateCourse(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(newCourse)
+}
+
+// ViewEnrolledCourses retrieves all courses a user is enrolled in
+func (h *UserHandler) ViewEnrolledCourses(w http.ResponseWriter, r *http.Request) {
+	// Get the student ID from the context (set by middleware)
+	studentID, ok := r.Context().Value("userID").(string)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Convert studentID to ObjectID
+	studentObjID, err := primitive.ObjectIDFromHex(studentID)
+	if err != nil {
+		http.Error(w, "Invalid student ID", http.StatusBadRequest)
+		return
+	}
+
+	// Fetch enrolled courses for the student
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	enrollmentsCursor, err := h.enrollments.Find(ctx, bson.M{"student_id": studentObjID})
+	if err != nil {
+		http.Error(w, "Failed to fetch enrollments", http.StatusInternalServerError)
+		return
+	}
+	defer enrollmentsCursor.Close(ctx)
+
+	var enrollments []models.Enrollment
+	if err = enrollmentsCursor.All(ctx, &enrollments); err != nil {
+		http.Error(w, "Error decoding enrollments", http.StatusInternalServerError)
+		return
+	}
+
+	// Extract course IDs from enrollments
+	courseIDs := make([]primitive.ObjectID, len(enrollments))
+	for i, enrollment := range enrollments {
+		courseIDs[i] = enrollment.CourseID
+	}
+
+	// Fetch course details for the enrolled courses
+	coursesCursor, err := h.collection.Database().Collection("courses").Find(ctx, bson.M{"_id": bson.M{"$in": courseIDs}})
+	if err != nil {
+		http.Error(w, "Failed to fetch courses", http.StatusInternalServerError)
+		return
+	}
+	defer coursesCursor.Close(ctx)
+
+	var courses []models.Course
+	if err = coursesCursor.All(ctx, &courses); err != nil {
+		http.Error(w, "Error decoding courses", http.StatusInternalServerError)
+		return
+	}
+
+	// Return courses as JSON
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(courses)
 }
 
 // GetCourses retrieves all courses
@@ -101,6 +173,12 @@ func (h *CourseHandler) UpdateCourse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate Schedule
+	if len(updatedCourse.Schedule.Days) == 0 || updatedCourse.Schedule.StartTime == "" || updatedCourse.Schedule.EndTime == "" {
+		http.Error(w, "Schedule must include days, start time, and end time", http.StatusBadRequest)
+		return
+	}
+
 	// Update fields
 	update := bson.M{
 		"$set": bson.M{
@@ -109,6 +187,9 @@ func (h *CourseHandler) UpdateCourse(w http.ResponseWriter, r *http.Request) {
 			"schedule":       updatedCourse.Schedule,
 			"duration_weeks": updatedCourse.DurationWeeks,
 			"meeting_link":   updatedCourse.MeetingLink,
+			"description":    updatedCourse.Description,
+			"start_date":     updatedCourse.StartDate,
+			"end_date":       updatedCourse.EndDate,
 			"updated_at":     time.Now(),
 		},
 	}
@@ -171,207 +252,72 @@ func (h *CourseHandler) ArchiveCourse(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Course archived successfully"))
 }
 
-// CreateSession handles creating a new session for a course
-func (h *CourseHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
-	var newSession models.Session
-	if err := json.NewDecoder(r.Body).Decode(&newSession); err != nil {
+// CreateNotice handles creating a new notice for a course
+func (h *CourseHandler) CreateNotice(w http.ResponseWriter, r *http.Request) {
+	var newNotice models.Notice
+	if err := json.NewDecoder(r.Body).Decode(&newNotice); err != nil {
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		return
 	}
 
 	// Validate required fields
-	if newSession.CourseID == primitive.NilObjectID || newSession.StartTime.IsZero() || newSession.EndTime.IsZero() {
-		http.Error(w, "CourseID, StartTime, and EndTime are required", http.StatusBadRequest)
+	if newNotice.CourseID == primitive.NilObjectID || newNotice.Content == "" {
+		http.Error(w, "CourseID and Content are required", http.StatusBadRequest)
 		return
 	}
 
 	// Set default values
-	newSession.ID = primitive.NewObjectID()
+	newNotice.ID = primitive.NewObjectID()
+	newNotice.CreatedAt = time.Now()
 
 	// Insert into database
-	_, err := h.collection.Database().Collection("sessions").InsertOne(context.TODO(), newSession)
+	_, err := h.collection.Database().Collection("notices").InsertOne(context.TODO(), newNotice)
 	if err != nil {
-		http.Error(w, "Failed to create session", http.StatusInternalServerError)
+		http.Error(w, "Failed to create notice", http.StatusInternalServerError)
 		return
 	}
 
-	// Return the created session
+	// Return the created notice
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(newSession)
+	json.NewEncoder(w).Encode(newNotice)
 }
 
-// AssignTutor handles assigning a tutor to a course
-func (h *CourseHandler) AssignTutor(w http.ResponseWriter, r *http.Request) {
-	var assignment struct {
-		TutorID  string `json:"tutor_id"`
-		CourseID string `json:"course_id"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&assignment); err != nil {
-		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+// GetNotices retrieves all notices for a specific course
+func (h *CourseHandler) GetNotices(w http.ResponseWriter, r *http.Request) {
+	courseID := r.URL.Query().Get("course_id")
+	if courseID == "" {
+		http.Error(w, "Course ID is required", http.StatusBadRequest)
 		return
 	}
 
-	// Convert TutorID and CourseID to ObjectID
-	tutorObjID, err := primitive.ObjectIDFromHex(assignment.TutorID)
-	if err != nil {
-		http.Error(w, "Invalid tutor ID", http.StatusBadRequest)
-		return
-	}
-	courseObjID, err := primitive.ObjectIDFromHex(assignment.CourseID)
+	// Convert courseID to ObjectID
+	courseObjID, err := primitive.ObjectIDFromHex(courseID)
 	if err != nil {
 		http.Error(w, "Invalid course ID", http.StatusBadRequest)
 		return
 	}
 
-	// Get the admin ID from the context
-	adminID, ok := r.Context().Value("userID").(string)
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-	adminObjID, err := primitive.ObjectIDFromHex(adminID)
-	if err != nil {
-		http.Error(w, "Invalid admin ID", http.StatusBadRequest)
-		return
-	}
-
-	// Check if the course exists
+	// Find notices for the course
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	var course models.Course
-	err = h.collection.FindOne(ctx, bson.M{"_id": courseObjID}).Decode(&course)
+	cursor, err := h.collection.Database().Collection("notices").Find(ctx, bson.M{"course_id": courseObjID})
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			http.Error(w, "Course not found", http.StatusNotFound)
-		} else {
-			http.Error(w, "Failed to check course existence", http.StatusInternalServerError)
-		}
-		return
-	}
-
-	// Check if the tutor exists
-	var tutor models.User
-	err = h.collection.Database().Collection("users").FindOne(ctx, bson.M{"_id": tutorObjID, "role": models.RoleTutor}).Decode(&tutor)
-	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			http.Error(w, "Tutor not found", http.StatusNotFound)
-		} else {
-			http.Error(w, "Failed to check tutor existence", http.StatusInternalServerError)
-		}
-		return
-	}
-
-	// Create the tutor assignment
-	newAssignment := models.TutorAssignment{
-		TutorID:    tutorObjID,
-		CourseID:   courseObjID,
-		AssignedBy: adminObjID,
-		AssignedAt: time.Now(),
-	}
-
-	// Insert the assignment into the database
-	_, err = h.collection.Database().Collection("tutor_assignments").InsertOne(ctx, newAssignment)
-	if err != nil {
-		http.Error(w, "Failed to assign tutor", http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(newAssignment)
-}
-
-// GetTutorsWithCourses retrieves all tutors with their assigned courses
-func (h *CourseHandler) GetTutorsWithCourses(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	// Aggregate tutors with their assigned courses
-	pipeline := mongo.Pipeline{
-		{
-			{
-				Key: "$lookup",
-				Value: bson.D{
-					{Key: "from", Value: "tutor_assignments"},
-					{Key: "localField", Value: "_id"},
-					{Key: "foreignField", Value: "tutor_id"},
-					{Key: "as", Value: "assigned_courses"},
-				},
-			},
-		},
-		{
-			{
-				Key: "$match",
-				Value: bson.D{
-					{Key: "role", Value: models.RoleTutor},
-				},
-			},
-		},
-	}
-
-	cursor, err := h.collection.Database().Collection("users").Aggregate(ctx, pipeline)
-	if err != nil {
-		http.Error(w, "Failed to fetch tutors with courses", http.StatusInternalServerError)
+		http.Error(w, "Failed to fetch notices", http.StatusInternalServerError)
 		return
 	}
 	defer cursor.Close(ctx)
 
-	var tutors []bson.M
-	if err = cursor.All(ctx, &tutors); err != nil {
-		http.Error(w, "Error decoding tutors with courses", http.StatusInternalServerError)
+	var notices []models.Notice
+	if err = cursor.All(ctx, &notices); err != nil {
+		http.Error(w, "Error decoding notices", http.StatusInternalServerError)
 		return
 	}
 
-	// Return tutors with their assigned courses as JSON
+	// Return notices as JSON
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tutors)
-}
-
-// GetCoursesWithSessions retrieves all courses with their sessions
-func (h *CourseHandler) GetCoursesWithSessions(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	// Aggregate courses with their sessions
-	pipeline := mongo.Pipeline{
-		{
-			{
-				Key: "$lookup",
-				Value: bson.D{
-					{Key: "from", Value: "sessions"},
-					{Key: "localField", Value: "_id"},
-					{Key: "foreignField", Value: "course_id"},
-					{Key: "as", Value: "sessions"},
-				},
-			},
-		},
-		{
-			{
-				Key: "$match",
-				Value: bson.D{
-					{Key: "archived", Value: false},
-				},
-			},
-		},
-	}
-
-	cursor, err := h.collection.Aggregate(ctx, pipeline)
-	if err != nil {
-		http.Error(w, "Failed to fetch courses with sessions", http.StatusInternalServerError)
-		return
-	}
-	defer cursor.Close(ctx)
-
-	var courses []bson.M
-	if err = cursor.All(ctx, &courses); err != nil {
-		http.Error(w, "Error decoding courses with sessions", http.StatusInternalServerError)
-		return
-	}
-
-	// Return courses with their sessions as JSON
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(courses)
+	json.NewEncoder(w).Encode(notices)
 }
 
 // get course by id

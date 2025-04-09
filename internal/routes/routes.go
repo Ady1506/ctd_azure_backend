@@ -35,13 +35,23 @@ func SetupRouter(client *mongo.Client, dbName string) *mux.Router {
 	router.HandleFunc("/api/users/logout", userHandler.Logout).Methods("POST")
 	router.Handle("/api/users/current", middleware.StudentAuthMiddleware(http.HandlerFunc(userHandler.CurrentUser))).Methods("GET")
 
+	// Email verification route
+	router.HandleFunc("/api/users/verify", userHandler.VerifyEmail).Methods("GET")
+
+	// Password reset routes
+	router.HandleFunc("/api/users/forgot-password", userHandler.ForgotPassword).Methods("POST")
+	router.HandleFunc("/api/users/reset-password", userHandler.ResetPassword).Methods("POST")
+
 	// Course routes
 	router.HandleFunc("/api/courses", courseHandler.GetCourses).Methods("GET")
 	router.Handle("/api/courses", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.CreateCourse))).Methods("POST") // Protected
 	router.Handle("/api/courses", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.UpdateCourse))).Methods("PUT")
 	router.Handle("/api/courses", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.DeleteCourse))).Methods("DELETE")
 	router.Handle("/api/courses/archive", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.ArchiveCourse))).Methods("PUT")
-
+  
+	// Enrollment views routes
+	router.Handle("/api/enrollments/courses", middleware.StudentAuthMiddleware(http.HandlerFunc(userHandler.ViewEnrolledCourses))).Methods("GET") // Protected
+  
 	//get course by id
 	router.HandleFunc("/api/courses/{id}", courseHandler.GetCourseByID).Methods("GET")
 
@@ -54,12 +64,9 @@ func SetupRouter(client *mongo.Client, dbName string) *mux.Router {
 	// Attendance routes
 	router.Handle("/api/attendance", middleware.StudentAuthMiddleware(http.HandlerFunc(userHandler.MarkAttendance))).Methods("POST") // Protected
 
-	// Tutor assignment route
-	router.Handle("/api/tutor_assignments", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.AssignTutor))).Methods("POST") // Protected
-
-	// New routes for fetching tutors with assigned courses and courses with sessions
-	router.Handle("/api/tutors_with_courses", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.GetTutorsWithCourses))).Methods("GET") // Protected
-	router.Handle("/api/courses_with_sessions", http.HandlerFunc(courseHandler.GetCoursesWithSessions)).Methods("GET")
+	// Notice routes
+	router.Handle("/api/notices", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.CreateNotice))).Methods("POST") // Protected
+	router.HandleFunc("/api/notices", courseHandler.GetNotices).Methods("GET")
 
 	return router
 }

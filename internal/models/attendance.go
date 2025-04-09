@@ -9,12 +9,13 @@ import (
 type AttendanceStatus string
 
 const (
-	StatusPresent  AttendanceStatus = "present"
-	StatusAbsent   AttendanceStatus = "absent"
-	StatusExcused  AttendanceStatus = "excused"
+	StatusPresent AttendanceStatus = "present"
+	StatusAbsent  AttendanceStatus = "absent"
+	StatusExcused AttendanceStatus = "excused"
 )
 
 type Attendance struct {
+	ID        primitive.ObjectID `json:"id" bson:"_id,omitempty"`
 	SessionID primitive.ObjectID `json:"session_id" bson:"session_id"`
 	StudentID primitive.ObjectID `json:"student_id" bson:"student_id"`
 	Status    AttendanceStatus   `json:"status" bson:"status"`
