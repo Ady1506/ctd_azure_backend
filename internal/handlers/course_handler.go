@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/gorilla/mux"
 	"github.com/jas-4484/ctd-backend/internal/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -317,4 +318,29 @@ func (h *CourseHandler) GetNotices(w http.ResponseWriter, r *http.Request) {
 	// Return notices as JSON
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(notices)
+}
+
+// get course by id
+func (h *CourseHandler) GetCourseByID(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	params := mux.Vars(r)
+	idParam := params["id"]
+
+	objID, err := primitive.ObjectIDFromHex(idParam)
+	if err != nil {
+		http.Error(w, "Invalid course ID", http.StatusBadRequest)
+		return
+	}
+
+	var course models.Course
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err = h.collection.FindOne(ctx, bson.M{"_id": objID}).Decode(&course)
+	if err != nil {
+		http.Error(w, "Course not found", http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(course)
 }

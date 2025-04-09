@@ -187,6 +187,7 @@ func (h *UserHandler) Signup(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(newUser)
 }
@@ -272,7 +273,8 @@ func (h *UserHandler) Signin(w http.ResponseWriter, r *http.Request) {
 		Expires:  time.Now().Add(24 * time.Hour),
 		HttpOnly: true,
 		Secure:   false,
-		Path:     "/api",
+		// Path:     "/api",
+		Path:     "/",
 	})
 
 	w.WriteHeader(http.StatusOK)
@@ -422,6 +424,52 @@ func (h *UserHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(users)
 }
+
+// CurrentUser returns the currently authenticated user's details
+func (h *UserHandler) CurrentUser(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value("userID").(string)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	objID, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		http.Error(w, "Invalid user ID", http.StatusBadRequest)
+		return
+	}
+
+	var user models.User
+	err = h.collection.FindOne(ctx, bson.M{"_id": objID}).Decode(&user)
+	if err != nil {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	// Return the user details (you can omit password field if needed)
+	user.Password = ""
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(user)
+}
+
+// Logout handles user logout
+func (h *UserHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Expires:  time.Unix(0, 0), // Expire immediately
+		MaxAge:   -1,
+	})
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Logged out successfully"))
+}
+
+
 
 // EnrollCourse handles student enrollment in a course
 func (h *UserHandler) EnrollCourse(w http.ResponseWriter, r *http.Request) {

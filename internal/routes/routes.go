@@ -32,6 +32,8 @@ func SetupRouter(client *mongo.Client, dbName string) *mux.Router {
 	router.HandleFunc("/api/users/signup", userHandler.Signup).Methods("POST")
 	router.HandleFunc("/api/users/signin", userHandler.Signin).Methods("POST")
 	router.HandleFunc("/api/users", userHandler.GetUsers).Methods("GET")
+	router.HandleFunc("/api/users/logout", userHandler.Logout).Methods("POST")
+	router.Handle("/api/users/current", middleware.StudentAuthMiddleware(http.HandlerFunc(userHandler.CurrentUser))).Methods("GET")
 
 	// Email verification route
 	router.HandleFunc("/api/users/verify", userHandler.VerifyEmail).Methods("GET")
@@ -46,9 +48,15 @@ func SetupRouter(client *mongo.Client, dbName string) *mux.Router {
 	router.Handle("/api/courses", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.UpdateCourse))).Methods("PUT")
 	router.Handle("/api/courses", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.DeleteCourse))).Methods("DELETE")
 	router.Handle("/api/courses/archive", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.ArchiveCourse))).Methods("PUT")
-
+  
 	// Enrollment views routes
 	router.Handle("/api/enrollments/courses", middleware.StudentAuthMiddleware(http.HandlerFunc(userHandler.ViewEnrolledCourses))).Methods("GET") // Protected
+  
+	//get course by id
+	router.HandleFunc("/api/courses/{id}", courseHandler.GetCourseByID).Methods("GET")
+
+	// Session routes
+	router.Handle("/api/sessions", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.CreateSession))).Methods("POST") // Protected
 
 	// Enrollment routes
 	router.Handle("/api/enrollments", middleware.StudentAuthMiddleware(http.HandlerFunc(userHandler.EnrollCourse))).Methods("POST") // Protected
