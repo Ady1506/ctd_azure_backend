@@ -48,7 +48,7 @@ func (h *UserHandler) Signup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate required fields
-	if newUser.Email == "" || newUser.DisplayName == "" || newUser.Password == "" || newUser.Roll == 0 || newUser.Branch == "" || newUser.Year == 0 || newUser.Mobile == 0 {
+	if newUser.Email == "" || newUser.DisplayName == "" || newUser.Password == "" || newUser.Roll == 0 || newUser.Branch == "" || newUser.Year == 0 || newUser.Mobile == 0 || newUser.Role == "" {
 		http.Error(w, "Email, display name, password, roll, branch, year, and mobile are required", http.StatusBadRequest)
 		return
 	}
@@ -187,7 +187,6 @@ func (h *UserHandler) Signup(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(newUser)
 }
@@ -274,7 +273,7 @@ func (h *UserHandler) Signin(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		Secure:   false,
 		// Path:     "/api",
-		Path:     "/",
+		Path: "/",
 	})
 
 	w.WriteHeader(http.StatusOK)
@@ -468,8 +467,6 @@ func (h *UserHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Logged out successfully"))
 }
-
-
 
 // EnrollCourse handles student enrollment in a course
 func (h *UserHandler) EnrollCourse(w http.ResponseWriter, r *http.Request) {
