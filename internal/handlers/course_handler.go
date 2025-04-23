@@ -252,7 +252,6 @@ func (h *CourseHandler) ArchiveCourse(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Course archived successfully"))
 }
 
-// CreateNotice handles creating a new notice for a course
 func (h *CourseHandler) CreateNotice(w http.ResponseWriter, r *http.Request) {
 	var newNotice models.Notice
 	if err := json.NewDecoder(r.Body).Decode(&newNotice); err != nil {

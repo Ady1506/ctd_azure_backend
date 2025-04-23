@@ -660,3 +660,101 @@ func (h *UserHandler) MarkAttendance(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(newAttendance)
 }
+func (h *UserHandler) GetNoticesForEnrolledCourses(w http.ResponseWriter, r *http.Request) {
+	// Get the student ID from the context (set by middleware)
+	studentID, ok := r.Context().Value("userID").(string)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Convert studentID to ObjectID
+	studentObjID, err := primitive.ObjectIDFromHex(studentID)
+	if err != nil {
+		http.Error(w, "Invalid student ID", http.StatusBadRequest)
+		return
+	}
+
+	// Fetch enrollments for the student
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	enrollmentsCursor, err := h.enrollments.Find(ctx, bson.M{"student_id": studentObjID})
+	if err != nil {
+		http.Error(w, "Failed to fetch enrollments", http.StatusInternalServerError)
+		return
+	}
+	defer enrollmentsCursor.Close(ctx)
+
+	var enrollments []models.Enrollment
+	if err = enrollmentsCursor.All(ctx, &enrollments); err != nil {
+		http.Error(w, "Error decoding enrollments", http.StatusInternalServerError)
+		return
+	}
+
+	// Extract course IDs from enrollments
+	courseIDs := make([]primitive.ObjectID, len(enrollments))
+	for i, enrollment := range enrollments {
+		courseIDs[i] = enrollment.CourseID
+	}
+
+	// Fetch notices for the enrolled courses
+	noticesCursor, err := h.collection.Database().Collection("notices").Find(ctx, bson.M{"course_id": bson.M{"$in": courseIDs}})
+	if err != nil {
+		http.Error(w, "Failed to fetch notices", http.StatusInternalServerError)
+		return
+	}
+	defer noticesCursor.Close(ctx)
+
+	var notices []models.Notice
+	if err = noticesCursor.All(ctx, &notices); err != nil {
+		http.Error(w, "Error decoding notices", http.StatusInternalServerError)
+		return
+	}
+
+	// Fetch course details for the enrolled courses
+	coursesCursor, err := h.collection.Database().Collection("courses").Find(ctx, bson.M{"_id": bson.M{"$in": courseIDs}})
+	if err != nil {
+		http.Error(w, "Failed to fetch courses", http.StatusInternalServerError)
+		return
+	}
+	defer coursesCursor.Close(ctx)
+
+	courseMap := make(map[primitive.ObjectID]string)
+	var courses []models.Course
+	if err = coursesCursor.All(ctx, &courses); err != nil {
+		http.Error(w, "Error decoding courses", http.StatusInternalServerError)
+		return
+	}
+
+	// Map course IDs to course names
+	for _, course := range courses {
+		courseMap[course.ID] = course.Name
+	}
+
+	// Combine notices with course names
+	type NoticeWithCourseName struct {
+		ID         primitive.ObjectID `json:"id"`
+		CourseID   primitive.ObjectID `json:"course_id"`
+		CourseName string             `json:"course_name"`
+		Content    string             `json:"content"`
+		Link       string             `json:"link,omitempty"`
+		CreatedAt  time.Time          `json:"created_at"`
+	}
+
+	var response []NoticeWithCourseName
+	for _, notice := range notices {
+		response = append(response, NoticeWithCourseName{
+			ID:         notice.ID,
+			CourseID:   notice.CourseID,
+			CourseName: courseMap[notice.CourseID],
+			Content:    notice.Content,
+			Link:       notice.Link,
+			CreatedAt:  notice.CreatedAt,
+		})
+	}
+
+	// Return the response as JSON
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
