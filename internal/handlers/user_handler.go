@@ -15,6 +15,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -571,22 +572,10 @@ func (h *UserHandler) MarkAttendance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if the student is enrolled in the course
+	// Fetch the course details
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	var enrollment models.Enrollment
-	err = h.enrollments.FindOne(ctx, bson.M{"student_id": studentObjID, "course_id": courseObjID}).Decode(&enrollment)
-	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			http.Error(w, "Student is not enrolled in this course", http.StatusForbidden)
-		} else {
-			http.Error(w, "Failed to check enrollment status", http.StatusInternalServerError)
-		}
-		return
-	}
-
-	// Fetch the course details
 	var course models.Course
 	err = h.collection.Database().Collection("courses").FindOne(ctx, bson.M{"_id": courseObjID}).Decode(&course)
 	if err != nil {
@@ -642,12 +631,14 @@ func (h *UserHandler) MarkAttendance(w http.ResponseWriter, r *http.Request) {
 
 	// Mark attendance
 	newAttendance := models.Attendance{
-		ID:        primitive.NewObjectID(),
-		SessionID: primitive.NilObjectID, // No session ID since it's based on schedule
-		StudentID: studentObjID,
-		Status:    models.StatusPresent,
-		MarkedBy:  studentObjID, // Assuming self-marking for simplicity
-		MarkedAt:  currentTime,
+		ID:         primitive.NewObjectID(),
+		SessionID:  primitive.NilObjectID, // No session ID since it's based on schedule
+		StudentID:  studentObjID,
+		CourseID:   courseObjID,
+		CourseName: course.Name, // Save the course name
+		Status:     models.StatusPresent,
+		MarkedBy:   studentObjID, // Assuming self-marking for simplicity
+		MarkedAt:   currentTime,
 	}
 
 	// Insert the attendance into the database
@@ -660,6 +651,46 @@ func (h *UserHandler) MarkAttendance(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(newAttendance)
 }
+
+func (h *UserHandler) GetRecentAttendances(w http.ResponseWriter, r *http.Request) {
+	// Get the student ID from the context (set by middleware)
+	studentID, ok := r.Context().Value("userID").(string)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Convert studentID to ObjectID
+	studentObjID, err := primitive.ObjectIDFromHex(studentID)
+	if err != nil {
+		http.Error(w, "Invalid student ID", http.StatusBadRequest)
+		return
+	}
+
+	// Fetch recent attendances for the student
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cursor, err := h.collection.Database().Collection("attendances").Find(ctx, bson.M{
+		"student_id": studentObjID,
+	}, options.Find().SetSort(bson.D{{"marked_at", -1}}).SetLimit(10)) // Sort by most recent and limit to 10
+	if err != nil {
+		http.Error(w, "Failed to fetch attendances", http.StatusInternalServerError)
+		return
+	}
+	defer cursor.Close(ctx)
+
+	var attendances []models.Attendance
+	if err = cursor.All(ctx, &attendances); err != nil {
+		http.Error(w, "Error decoding attendances", http.StatusInternalServerError)
+		return
+	}
+
+	// Return attendances as JSON
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(attendances)
+}
+
 func (h *UserHandler) GetNoticesForEnrolledCourses(w http.ResponseWriter, r *http.Request) {
 	// Get the student ID from the context (set by middleware)
 	studentID, ok := r.Context().Value("userID").(string)
