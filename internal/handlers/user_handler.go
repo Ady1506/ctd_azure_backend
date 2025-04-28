@@ -789,3 +789,141 @@ func (h *UserHandler) GetNoticesForEnrolledCourses(w http.ResponseWriter, r *htt
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
+func calculateSessionsOccurred(schedule models.Schedule, startDate, currentDate time.Time) int {
+	daysMap := make(map[string]bool)
+	for _, day := range schedule.Days {
+		daysMap[strings.ToLower(day)] = true
+	}
+
+	sessionsOccurred := 0
+	for date := startDate; date.Before(currentDate) || date.Equal(currentDate); date = date.AddDate(0, 0, 1) {
+		if daysMap[strings.ToLower(date.Weekday().String()[:3])] {
+			sessionsOccurred++
+		}
+	}
+
+	return sessionsOccurred
+}
+func (h *UserHandler) GetAttendanceSummary(w http.ResponseWriter, r *http.Request) {
+	// Get the student ID from the context (set by middleware)
+	studentID, ok := r.Context().Value("userID").(string)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Convert studentID to ObjectID
+	studentObjID, err := primitive.ObjectIDFromHex(studentID)
+	if err != nil {
+		http.Error(w, "Invalid student ID", http.StatusBadRequest)
+		return
+	}
+
+	// Fetch attendance records for the student
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var attendances []models.Attendance
+	cursor, err := h.collection.Database().Collection("attendances").Find(ctx, bson.M{"student_id": studentObjID})
+	if err != nil {
+		http.Error(w, "Failed to fetch attendance records", http.StatusInternalServerError)
+		return
+	}
+	defer cursor.Close(ctx)
+
+	if err = cursor.All(ctx, &attendances); err != nil {
+		http.Error(w, "Error decoding attendance records", http.StatusInternalServerError)
+		return
+	}
+
+	// Fetch enrolled courses for the student
+	var enrollments []models.Enrollment
+	enrollmentsCursor, err := h.enrollments.Find(ctx, bson.M{"student_id": studentObjID})
+	if err != nil {
+		http.Error(w, "Failed to fetch enrollments", http.StatusInternalServerError)
+		return
+	}
+	defer enrollmentsCursor.Close(ctx)
+
+	if err = enrollmentsCursor.All(ctx, &enrollments); err != nil {
+		http.Error(w, "Error decoding enrollments", http.StatusInternalServerError)
+		return
+	}
+
+	// Extract course IDs from enrollments
+	courseIDs := make([]primitive.ObjectID, len(enrollments))
+	for i, enrollment := range enrollments {
+		courseIDs[i] = enrollment.CourseID
+	}
+
+	// Fetch course details
+	var courses []models.Course
+	coursesCursor, err := h.collection.Database().Collection("courses").Find(ctx, bson.M{"_id": bson.M{"$in": courseIDs}})
+	if err != nil {
+		http.Error(w, "Failed to fetch courses", http.StatusInternalServerError)
+		return
+	}
+	defer coursesCursor.Close(ctx)
+
+	if err = coursesCursor.All(ctx, &courses); err != nil {
+		http.Error(w, "Error decoding courses", http.StatusInternalServerError)
+		return
+	}
+
+	// Create a map of course IDs to course names
+	courseNameMap := make(map[string]string)
+	for _, course := range courses {
+		courseNameMap[course.ID.Hex()] = course.Name
+	}
+
+	// Calculate attendance percentages
+	totalSessionsOccurred := 0
+	totalSessionsAttended := 0
+	subjectWiseAttendance := make(map[string]map[string]int) // courseName -> {"occurred": x, "attended": y}
+
+	for _, course := range courses {
+		// Calculate sessions occurred for the course
+		sessionsOccurred := calculateSessionsOccurred(course.Schedule, course.StartDate, time.Now())
+		subjectWiseAttendance[course.Name] = map[string]int{
+			"occurred": sessionsOccurred,
+			"attended": 0,
+		}
+		totalSessionsOccurred += sessionsOccurred
+	}
+
+	// Count sessions attended for each course
+	for _, attendance := range attendances {
+		if attendance.Status == models.StatusPresent {
+			courseName := courseNameMap[attendance.CourseID.Hex()]
+			if _, exists := subjectWiseAttendance[courseName]; exists {
+				subjectWiseAttendance[courseName]["attended"]++
+				totalSessionsAttended++
+			}
+		}
+	}
+
+	// Calculate percentages
+	totalAttendancePercentage := 0.0
+	if totalSessionsOccurred > 0 {
+		totalAttendancePercentage = (float64(totalSessionsAttended) / float64(totalSessionsOccurred)) * 100
+	}
+
+	subjectWisePercentages := make(map[string]float64)
+	for courseName, data := range subjectWiseAttendance {
+		if data["occurred"] > 0 {
+			subjectWisePercentages[courseName] = (float64(data["attended"]) / float64(data["occurred"])) * 100
+		} else {
+			subjectWisePercentages[courseName] = 0.0
+		}
+	}
+
+	// Prepare response
+	response := map[string]interface{}{
+		"total_percentage": totalAttendancePercentage,
+		"subject_wise":     subjectWisePercentages,
+	}
+
+	// Return response as JSON
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}

@@ -61,6 +61,7 @@ func SetupRouter(client *mongo.Client, dbName string) *mux.Router {
 	// Attendance routes
 	router.Handle("/api/attendance", middleware.StudentAuthMiddleware(http.HandlerFunc(userHandler.MarkAttendance))).Methods("POST") // Protected
 	router.Handle("/api/attendances/recent", middleware.StudentAuthMiddleware(http.HandlerFunc(userHandler.GetRecentAttendances))).Methods("GET")
+	router.Handle("/api/attendance/summary", middleware.StudentAuthMiddleware(http.HandlerFunc(userHandler.GetAttendanceSummary))).Methods("GET")
 
 	// Notice routes
 	router.Handle("/api/notices", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.CreateNotice))).Methods("POST") // Protected
