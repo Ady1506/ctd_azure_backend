@@ -67,5 +67,9 @@ func SetupRouter(client *mongo.Client, dbName string) *mux.Router {
 	router.Handle("/api/notices", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.CreateNotice))).Methods("POST") // Protected
 	router.HandleFunc("/api/notices", courseHandler.GetNotices).Methods("GET")
 	router.Handle("/api/notices/enrolled", middleware.StudentAuthMiddleware(http.HandlerFunc(userHandler.GetNoticesForEnrolledCourses))).Methods("GET") // Protected
+
+	//Student Details (Admin)
+	router.Handle("/api/admin/student-details", middleware.AdminAuthMiddleware(http.HandlerFunc(userHandler.GetStudentDetails))).Methods("GET") // Protected
 	return router
+
 }
