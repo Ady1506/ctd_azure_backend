@@ -343,3 +343,25 @@ func (h *CourseHandler) GetCourseByID(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(course)
 }
+func (h *CourseHandler) GetArchivedCourses(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Query for archived courses
+	cursor, err := h.collection.Find(ctx, bson.M{"archived": true})
+	if err != nil {
+		http.Error(w, "Failed to fetch archived courses", http.StatusInternalServerError)
+		return
+	}
+	defer cursor.Close(ctx)
+
+	var archivedCourses []models.Course
+	if err = cursor.All(ctx, &archivedCourses); err != nil {
+		http.Error(w, "Error decoding archived courses", http.StatusInternalServerError)
+		return
+	}
+
+	// Return archived courses as JSON
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(archivedCourses)
+}
