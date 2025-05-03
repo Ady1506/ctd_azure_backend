@@ -43,7 +43,7 @@ func SetupRouter(client *mongo.Client, dbName string) *mux.Router {
 	router.HandleFunc("/api/users/reset-password", userHandler.ResetPassword).Methods("POST")
 
 	// Course routes
-	router.Handle("/api/courses", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.GetCourses))).Methods("GET")
+	router.HandleFunc("/api/courses", courseHandler.GetCourses).Methods("GET")
 	router.Handle("/api/courses", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.CreateCourse))).Methods("POST") // Protected
 	router.Handle("/api/courses", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.UpdateCourse))).Methods("PUT")
 	router.Handle("/api/courses", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.DeleteCourse))).Methods("DELETE")
