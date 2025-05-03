@@ -66,9 +66,10 @@ func SetupRouter(client *mongo.Client, dbName string) *mux.Router {
 	router.Handle("/api/attendance/summary", middleware.StudentAuthMiddleware(http.HandlerFunc(userHandler.GetAttendanceSummary))).Methods("GET")
 
 	// Notice routes
-	router.Handle("/api/notices", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.CreateNotice))).Methods("POST") // Protected
-	router.HandleFunc("/api/notices", courseHandler.GetNotices).Methods("GET")
+	router.Handle("/api/notices", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.CreateNotice))).Methods("POST")                         // Protected
+	router.HandleFunc("/api/notices", courseHandler.GetNotices).Methods("GET")                                                                          //Get notices for a particular course
 	router.Handle("/api/notices/enrolled", middleware.StudentAuthMiddleware(http.HandlerFunc(userHandler.GetNoticesForEnrolledCourses))).Methods("GET") // Protected
+	router.Handle("/api/admin/notices", middleware.AdminAuthMiddleware(http.HandlerFunc(courseHandler.GetAllNotices))).Methods("GET")                   // Get all notices for admin
 
 	//Student Details (Admin)
 	router.Handle("/api/admin/student-details", middleware.AdminAuthMiddleware(http.HandlerFunc(userHandler.GetStudentDetails))).Methods("GET") // Protected

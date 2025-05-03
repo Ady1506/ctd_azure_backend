@@ -389,3 +389,25 @@ func (h *CourseHandler) GetUnarchivedCourses(w http.ResponseWriter, r *http.Requ
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(unarchivedCourses)
 }
+func (h *CourseHandler) GetAllNotices(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Query for all notices
+	cursor, err := h.collection.Database().Collection("notices").Find(ctx, bson.M{})
+	if err != nil {
+		http.Error(w, "Failed to fetch notices", http.StatusInternalServerError)
+		return
+	}
+	defer cursor.Close(ctx)
+
+	var notices []models.Notice
+	if err = cursor.All(ctx, &notices); err != nil {
+		http.Error(w, "Error decoding notices", http.StatusInternalServerError)
+		return
+	}
+
+	// Return notices as JSON
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(notices)
+}
