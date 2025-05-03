@@ -365,3 +365,27 @@ func (h *CourseHandler) GetArchivedCourses(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(archivedCourses)
 }
+
+// GetUnarchivedCourses retrieves all unarchived courses
+func (h *CourseHandler) GetUnarchivedCourses(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Query for unarchived courses
+	cursor, err := h.collection.Find(ctx, bson.M{"archived": false})
+	if err != nil {
+		http.Error(w, "Failed to fetch unarchived courses", http.StatusInternalServerError)
+		return
+	}
+	defer cursor.Close(ctx)
+
+	var unarchivedCourses []models.Course
+	if err = cursor.All(ctx, &unarchivedCourses); err != nil {
+		http.Error(w, "Error decoding unarchived courses", http.StatusInternalServerError)
+		return
+	}
+
+	// Return unarchived courses as JSON
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(unarchivedCourses)
+}

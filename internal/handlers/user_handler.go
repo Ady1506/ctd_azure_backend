@@ -1032,3 +1032,105 @@ func (h *UserHandler) GetStudentDetails(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
+func (h *UserHandler) GetStudentsInCourse(w http.ResponseWriter, r *http.Request) {
+	// Get the course ID from the query parameter
+	courseID := r.URL.Query().Get("course_id")
+	if courseID == "" {
+		http.Error(w, "Course ID is required", http.StatusBadRequest)
+		return
+	}
+
+	// Convert courseID to ObjectID
+	courseObjID, err := primitive.ObjectIDFromHex(courseID)
+	if err != nil {
+		http.Error(w, "Invalid course ID", http.StatusBadRequest)
+		return
+	}
+
+	// Fetch enrollments for the course
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var enrollments []models.Enrollment
+	enrollmentsCursor, err := h.enrollments.Find(ctx, bson.M{"course_id": courseObjID})
+	if err != nil {
+		http.Error(w, "Failed to fetch enrollments", http.StatusInternalServerError)
+		return
+	}
+	defer enrollmentsCursor.Close(ctx)
+
+	if err = enrollmentsCursor.All(ctx, &enrollments); err != nil {
+		http.Error(w, "Error decoding enrollments", http.StatusInternalServerError)
+		return
+	}
+
+	// Extract student IDs from enrollments
+	studentIDs := make([]primitive.ObjectID, len(enrollments))
+	for i, enrollment := range enrollments {
+		studentIDs[i] = enrollment.StudentID
+	}
+
+	// Fetch student details
+	var students []models.User
+	studentsCursor, err := h.collection.Find(ctx, bson.M{"_id": bson.M{"$in": studentIDs}})
+	if err != nil {
+		http.Error(w, "Failed to fetch student details", http.StatusInternalServerError)
+		return
+	}
+	defer studentsCursor.Close(ctx)
+
+	if err = studentsCursor.All(ctx, &students); err != nil {
+		http.Error(w, "Error decoding student details", http.StatusInternalServerError)
+		return
+	}
+
+	// Fetch attendance records for the course
+	var attendances []models.Attendance
+	attendanceCursor, err := h.collection.Database().Collection("attendances").Find(ctx, bson.M{"course_id": courseObjID})
+	if err != nil {
+		http.Error(w, "Failed to fetch attendance records", http.StatusInternalServerError)
+		return
+	}
+	defer attendanceCursor.Close(ctx)
+
+	if err = attendanceCursor.All(ctx, &attendances); err != nil {
+		http.Error(w, "Error decoding attendance records", http.StatusInternalServerError)
+		return
+	}
+
+	// Calculate attendance percentage for each student
+	type StudentAttendance struct {
+		StudentID      primitive.ObjectID `json:"student_id"`
+		StudentName    string             `json:"student_name"`
+		AttendanceRate float64            `json:"attendance_rate"`
+	}
+
+	var response []StudentAttendance
+	for _, student := range students {
+		// Count sessions attended by the student
+		sessionsAttended := 0
+		for _, attendance := range attendances {
+			if attendance.StudentID == student.ID && attendance.Status == models.StatusPresent {
+				sessionsAttended++
+			}
+		}
+
+		// Calculate attendance percentage
+		sessionsOccurred := calculateSessionsOccurred(models.Schedule{}, time.Time{}, time.Now()) // Replace with actual course schedule and start date
+		attendanceRate := 0.0
+		if sessionsOccurred > 0 {
+			attendanceRate = (float64(sessionsAttended) / float64(sessionsOccurred)) * 100
+		}
+
+		// Add to response
+		response = append(response, StudentAttendance{
+			StudentID:      student.ID,
+			StudentName:    student.DisplayName,
+			AttendanceRate: attendanceRate,
+		})
+	}
+
+	// Return response as JSON
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
