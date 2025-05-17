@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -543,7 +544,6 @@ func (h *UserHandler) EnrollCourse(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(newEnrollment)
 }
 
-// MarkAttendance handles marking attendance for a student based on the course schedule
 func (h *UserHandler) MarkAttendance(w http.ResponseWriter, r *http.Request) {
 	var attendanceRequest struct {
 		CourseID string `json:"course_id"`
@@ -590,7 +590,9 @@ func (h *UserHandler) MarkAttendance(w http.ResponseWriter, r *http.Request) {
 	// Validate the current time against the course schedule
 	currentTime := time.Now()
 	currentDay := currentTime.Weekday().String()[:3] // Get the current day (e.g., "Mon", "Tue")
-	currentHour := currentTime.Format("3:04 PM")     // Get the current time in "HH:MM AM/PM" format
+
+	// Log the current day
+	fmt.Printf("Current Day: %s\n", currentDay)
 
 	// Check if the current day is in the course schedule
 	isDayValid := false
@@ -605,9 +607,42 @@ func (h *UserHandler) MarkAttendance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parse the course schedule's start and end times
+	// Parse the course schedule's start and end times
+	layout := "3:04 PM"
+	startTime, err := time.Parse(layout, course.Schedule.StartTime)
+	if err != nil {
+		http.Error(w, "Invalid start time format in course schedule", http.StatusInternalServerError)
+		fmt.Printf("Error parsing start time: %v\n", err)
+		return
+	}
+	endTime, err := time.Parse(layout, course.Schedule.EndTime)
+	if err != nil {
+		http.Error(w, "Invalid end time format in course schedule", http.StatusInternalServerError)
+		fmt.Printf("Error parsing end time: %v\n", err)
+		return
+	}
+
+	// Normalize startTime and endTime to the same date as currentTime
+	startTime = time.Date(0, 1, 1, startTime.Hour(), startTime.Minute(), 0, 0, time.Local)
+	endTime = time.Date(0, 1, 1, endTime.Hour(), endTime.Minute(), 0, 0, time.Local)
+
+	// Extract the current time's hour and minute
+	currentHour, currentMinute, _ := currentTime.Clock()
+	currentTimeOnly := time.Date(0, 1, 1, currentHour, currentMinute, 0, 0, time.Local)
+
+	// Log the normalized times
+	fmt.Printf("Normalized Current Time: %s\n", currentTimeOnly.Format(layout))
+	fmt.Printf("Normalized Start Time: %s\n", startTime.Format(layout))
+	fmt.Printf("Normalized End Time: %s\n", endTime.Format(layout))
+
 	// Check if the current time falls within the scheduled time range
-	if currentHour < course.Schedule.StartTime || currentHour > course.Schedule.EndTime {
-		http.Error(w, "Attendance cannot be marked outside the scheduled time", http.StatusForbidden)
+	if currentTimeOnly.Before(startTime) || currentTimeOnly.After(endTime) {
+		errorMessage := fmt.Sprintf(
+			"Attendance cannot be marked outside the scheduled time. Current time: %s, Scheduled time: %s to %s",
+			currentTime.Format(layout), course.Schedule.StartTime, course.Schedule.EndTime,
+		)
+		http.Error(w, errorMessage, http.StatusForbidden)
 		return
 	}
 
@@ -790,17 +825,27 @@ func (h *UserHandler) GetNoticesForEnrolledCourses(w http.ResponseWriter, r *htt
 	json.NewEncoder(w).Encode(response)
 }
 func calculateSessionsOccurred(schedule models.Schedule, startDate, currentDate time.Time) int {
+	// Create a map of valid days from the schedule
 	daysMap := make(map[string]bool)
 	for _, day := range schedule.Days {
 		daysMap[strings.ToLower(day)] = true
 	}
 
+	// Debug: Log the schedule and days map
+	fmt.Printf("Schedule Days: %+v\n", schedule.Days)
+	fmt.Printf("Days Map: %+v\n", daysMap)
+
+	// Calculate the number of sessions that occurred
 	sessionsOccurred := 0
 	for date := startDate; date.Before(currentDate) || date.Equal(currentDate); date = date.AddDate(0, 0, 1) {
+		// Check if the current date is a valid session day
 		if daysMap[strings.ToLower(date.Weekday().String()[:3])] {
 			sessionsOccurred++
 		}
 	}
+
+	// Debug: Log the total sessions occurred
+	fmt.Printf("Sessions Occurred (including today if applicable): %d\n", sessionsOccurred)
 
 	return sessionsOccurred
 }
@@ -893,12 +938,13 @@ func (h *UserHandler) GetAttendanceSummary(w http.ResponseWriter, r *http.Reques
 
 	// Count sessions attended for each course
 	for _, attendance := range attendances {
-		if attendance.Status == models.StatusPresent {
-			courseName := courseNameMap[attendance.CourseID.Hex()]
-			if _, exists := subjectWiseAttendance[courseName]; exists {
-				subjectWiseAttendance[courseName]["attended"]++
-				totalSessionsAttended++
-			}
+		courseName := courseNameMap[attendance.CourseID.Hex()]
+		if _, exists := subjectWiseAttendance[courseName]; exists {
+			subjectWiseAttendance[courseName]["attended"]++
+			totalSessionsAttended++
+		} else {
+			// Debug: Log unmatched attendance records
+			fmt.Printf("Unmatched Attendance Record: %+v\n", attendance)
 		}
 	}
 
