@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log"
 	"os"
 	"time"
 
@@ -9,32 +10,31 @@ import (
 
 type Config struct {
 	Port         string
+	Origin       string
 	MongoURI     string
 	DatabaseName string
 	Timeout      time.Duration
 }
 
 func LoadConfig() Config {
-	err := godotenv.Load()
+	err := godotenv.Load("../../.env")
 	if err != nil {
 		if os.IsNotExist(err) {
-			// .env file not found, proceed with default values
+			log.Println(".env file not found, using default/environment values")
 		} else {
-			panic("Error loading .env file")
+			panic("Error loading .env file: " + err.Error())
 		}
 	}
 	return Config{
-		Port:         getEnv("PORT", "8000"),
-		MongoURI:     getEnv("MONGODB_URI", "mongodb+srv://jas:jas@abc.xqqgc.mongodb.net/?retryWrites=true&w=majority&appName=ABC"),
-		DatabaseName: getEnv("DATABASE_NAME", "go_backend"),
+		Port:         getEnv("PORT"),
+		Origin:       getEnv("ORIGIN"),
+		MongoURI:     getEnv("MONGODB_URI"),
+		DatabaseName: getEnv("DATABASE_NAME"),
 		Timeout:      10 * time.Second,
 	}
 }
 
-func getEnv(key, defaultValue string) string {
+func getEnv(key string) string {
 	value := os.Getenv(key)
-	if value == "" {
-		return defaultValue
-	}
 	return value
 }
