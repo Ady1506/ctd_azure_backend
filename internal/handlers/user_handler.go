@@ -41,7 +41,6 @@ func GenerateVerificationToken() (string, error) {
 }
 
 // Signup handles user registration
-// Signup handles user registration
 func (h *UserHandler) Signup(w http.ResponseWriter, r *http.Request) {
 	var newUser models.User
 	if err := json.NewDecoder(r.Body).Decode(&newUser); err != nil {
@@ -273,7 +272,7 @@ func (h *UserHandler) Signin(w http.ResponseWriter, r *http.Request) {
 		Value:    token,
 		Expires:  time.Now().Add(24 * time.Hour),
 		HttpOnly: true,
-		Secure:   false,
+		Secure:   true,
 		Path:     "/",
 	})
 
