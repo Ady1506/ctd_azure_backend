@@ -25,7 +25,7 @@ func SetupRouter(client *mongo.Client, dbName string) *mux.Router {
 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte("<h1>working just fine</h1>"))
+		w.Write([]byte("<h1>working fine</h1>"))
 	}).Methods("GET")
 
 	// User routes
